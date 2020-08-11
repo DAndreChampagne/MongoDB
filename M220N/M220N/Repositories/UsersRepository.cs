@@ -53,8 +53,8 @@ namespace M220N.Repositories
             // TODO Ticket: User Management
             // Retrieve the user document corresponding with the user's email.
             //
-            // // return await _usersCollection.Find(...)
-            return null;
+            return await _usersCollection.Find(x => x.Email == email).FirstOrDefaultAsync();
+            // return null;
         }
 
         /// <summary>
@@ -70,7 +70,6 @@ namespace M220N.Repositories
         {
             try
             {
-                var user = new User();
                 // TODO Ticket: User Management
                 // Create a user with the "Name", "Email", and "HashedPassword" fields.
                 // DO NOT STORE CLEAR-TEXT PASSWORDS! Instead, use the helper class
@@ -79,9 +78,21 @@ namespace M220N.Repositories
                 // // user = new User...
                 // // await _usersCollection.InsertOneAsync(...)
                 //
+
+                var user = new User {
+                    Name = name,
+                    Email = email,
+                    HashedPassword = PasswordHashOMatic.Hash(password),
+                };
+
                 // // TODO Ticket: Durable Writes
                 // // To use a more durable Write Concern for this operation, add the 
                 // // .WithWriteConcern() method to your InsertOneAsync call.
+
+                await _usersCollection
+                    .WithWriteConcern(WriteConcern.WMajority)
+                    .InsertOneAsync(user, null, cancellationToken)
+                    ;
 
                 var newUser = await GetUserAsync(user.Email, cancellationToken);
                 return new UserResponse(newUser);
@@ -132,6 +143,21 @@ namespace M220N.Repositories
                 //  Builders<Session>.Update.Set(...).Set(...),
                 //  new UpdateOptions(...));
 
+                var update = Builders<Session>.Update
+                    .Set(x => x.UserId, user.Email)
+                    .Set(x => x.Jwt, user.AuthToken);
+
+                var options = new UpdateOptions {
+                    IsUpsert = true, 
+                };
+
+                await _sessionsCollection.UpdateOneAsync(
+                    x => x.UserId == user.Email, 
+                    update,
+                    options,
+                    cancellationToken
+                );
+
                 storedUser.AuthToken = user.AuthToken;
                 return new UserResponse(storedUser);
             }
@@ -153,7 +179,7 @@ namespace M220N.Repositories
             // TODO Ticket: User Management
             // Delete the document in the `sessions` collection matching the email.
             
-            await _sessionsCollection.DeleteOneAsync(new BsonDocument(), cancellationToken);
+            await _sessionsCollection.DeleteOneAsync(x => x.UserId == email, cancellationToken);
             return new UserResponse(true, "User logged out.");
         }
 
@@ -167,7 +193,7 @@ namespace M220N.Repositories
         {
             // TODO Ticket: User Management
             // Retrieve the session document corresponding with the user's email.
-            return await _sessionsCollection.Find(new BsonDocument()).FirstOrDefaultAsync();
+            return await _sessionsCollection.Find(x => x.UserId == email).FirstOrDefaultAsync();
         }
 
         /// <summary>
@@ -221,13 +247,11 @@ namespace M220N.Repositories
                 // TODO Ticket: User Preferences
                 // Use the data in "preferences" to update the user's preferences.
                 //
-                // updateResult = await _usersCollection.UpdateOneAsync(
-                //    new BsonDocument(),
-                //    Builders<User>.Update.Set("TODO", preferences),
-                //    /* Be sure to pass a new UpdateOptions object here,
-                //       setting IsUpsert to false! */
-                //    new UpdateOptions(),
-                //    cancellationToken);
+                updateResult = await _usersCollection.UpdateOneAsync(
+                   x => x.Email == email,
+                   Builders<User>.Update.Set("preferences", preferences),
+                   new UpdateOptions { IsUpsert = false },
+                   cancellationToken);
 
                 return updateResult.MatchedCount == 0
                     ? new UserResponse(false, "No user found with that email")

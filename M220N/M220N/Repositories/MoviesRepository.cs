@@ -86,12 +86,20 @@ namespace M220N.Repositories
             {
                 return await _moviesCollection.Aggregate()
                     .Match(Builders<Movie>.Filter.Eq(x => x.Id, movieId))
+                    .Lookup(
+                        _commentsCollection,
+                        m => m.Id,
+                        (Comment c) => c.MovieId,
+                        (Movie x) => x.Comments
+                    )
                     // Ticket: Get Comments
                     // Add a lookup stage that includes the
                     // comments associated with the retrieved movie
                     .FirstOrDefaultAsync(cancellationToken);
             }
-
+            catch (FormatException) {
+                return null;
+            }
             catch (Exception ex)
             {
                 // TODO Ticket: Error Handling
@@ -117,12 +125,19 @@ namespace M220N.Repositories
             // TODO Ticket: Projection - Search for movies by ``country`` and use projection to
             // return only the ``Id`` and ``Title`` fields
             //
-            //return await _moviesCollection
-            //   .Find(...)
-            //   .Project(...)
-            //   .ToListAsync(cancellationToken);
 
-            return null;
+            var filter = Builders<Movie>.Filter
+                .In("countries", countries);
+
+            var projection = Builders<Movie>.Projection
+                .Include(x => x.Title)
+                .Include(x => x.Id);
+
+            return await _moviesCollection
+              .Find(filter)
+              .Project<MovieByCountryProjection>(projection)
+              .SortByDescending(x => x.Title)
+              .ToListAsync(cancellationToken);
         }
 
         /// <summary>
@@ -188,14 +203,16 @@ namespace M220N.Repositories
             int page = 0, params string[] genres)
         {
             var returnValue = new List<Movie>();
-
             var sort = new BsonDocument(sortKey, DefaultSortOrder);
 
             // TODO Ticket: Enable filtering of movies by genre.
             // If you get stuck see the ``GetMoviesByCastAsync`` method above.
-            /*return await _moviesCollection
-               .Find(...)
-               .ToListAsync(cancellationToken);*/
+            returnValue = await _moviesCollection
+                .Find(x => x.Genres.Any(y => genres.Contains(y)))
+                .Sort(sort)
+                .Skip(page * limit)
+                .Limit(limit)
+                .ToListAsync(cancellationToken);
 
             // // TODO Ticket: Paging
             // TODO Ticket: Paging
@@ -249,6 +266,9 @@ namespace M220N.Repositories
             {
                 matchStage,
                 sortStage,
+                skipStage,
+                limitStage,
+                facetStage,
                 // add the remaining stages in the correct order
 
             };

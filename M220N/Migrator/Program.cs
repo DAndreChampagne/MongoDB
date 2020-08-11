@@ -18,7 +18,7 @@ namespace Migrator
         static IMongoCollection<Movie> _moviesCollection;
 
         // TODO: Update this connection string as needed.
-        static string mongoConnectionString = "";
+        static string mongoConnectionString = "mongodb+srv://m220student:m220password@mflix.skrt4.mongodb.net/sample_mflix?retryWrites=true&w=majority";
         
         static async Task Main(string[] args)
         {
@@ -37,6 +37,16 @@ namespace Migrator
                 //
                 // // bulkWriteDatesResult = await _moviesCollection.BulkWriteAsync(...
 
+                var requests = new List<ReplaceOneModel<Movie>>();
+                foreach (var item in TransformDatePipeline()) {
+                    requests.Add(new ReplaceOneModel<Movie>(
+                        Builders<Movie>.Filter.Where(x => x.Id == item.Id),
+                        item
+                    ));
+                }
+
+                bulkWriteDatesResult = await _moviesCollection.BulkWriteAsync(requests, new BulkWriteOptions { IsOrdered = false });
+
                 Console.WriteLine($"{bulkWriteDatesResult.ProcessedRequests.Count} records updated.");
             }
 
@@ -51,6 +61,17 @@ namespace Migrator
                 // (https://api.mongodb.com/csharp/current/html/T_MongoDB_Driver_ReplaceOneModel_1.htm).
                 //
                 // // bulkWriteRatingsResult = await _moviesCollection.BulkWriteAsync(...
+
+                var requests = new List<ReplaceOneModel<Movie>>();
+                foreach (var item in TransformRatingPipeline()) {
+                    requests.Add(new ReplaceOneModel<Movie>(
+                        Builders<Movie>.Filter.Where(x => x.Id == item.Id),
+                        item
+                    ));
+                }
+
+                bulkWriteRatingsResult = await _moviesCollection.BulkWriteAsync(requests, new BulkWriteOptions { IsOrdered = false });
+
 
                 Console.WriteLine($"{bulkWriteRatingsResult.ProcessedRequests.Count} records updated.");
             }

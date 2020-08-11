@@ -51,6 +51,8 @@ namespace M220N.Repositories
                 // Implement InsertOneAsync() to insert a
                 // new comment into the comments collection.
 
+                await _commentsCollection.InsertOneAsync(newComment);
+
                 return await _moviesRepository.GetMovieAsync(movieId.ToString(), cancellationToken);
             }
             catch
@@ -77,13 +79,15 @@ namespace M220N.Repositories
             // existing comment. Remember that only the original
             // comment owner can update the comment!
             //
-            // // return await _commentsCollection.UpdateOneAsync(
-            // // Builders<Comment>.Filter.Where(...),
-            // // Builders<Comment>.Update.Set(...).Set(...),
-            // // new UpdateOptions { ... } ,
-            // // cancellationToken);
+            return await _commentsCollection.UpdateOneAsync(
+                x => x.Id == commentId && x.Email == user.Email,
+                Builders<Comment>.Update
+                    .Set(x => x.Text, comment),
+                new UpdateOptions { IsUpsert = false },
+                cancellationToken)
+            ;
 
-            return null;
+            // return null;
         }
 
         /// <summary>
@@ -102,9 +106,9 @@ namespace M220N.Repositories
             // existing comment. Remember that only the original
             // comment owner can delete the comment!
             _commentsCollection.DeleteOne(
-                Builders<Comment>.Filter.Where(
-                    c => c.MovieId == movieId
-                         && c.Id == commentId));
+                Builders<Comment>.Filter
+                    .Where(c => c.MovieId == movieId && c.Id == commentId && c.Email == user.Email)
+            );
 
             return await _moviesRepository.GetMovieAsync(movieId.ToString(), cancellationToken);
         }
@@ -127,11 +131,15 @@ namespace M220N.Repositories
                 // Return the 20 users who have commented the most on MFlix. You will need to use
                 // the Group, Sort, Limit, and Project methods of the Aggregation pipeline.
                 //
-                // // result = await _commentsCollection
-                // //   .WithReadConcern(...)
-                // //   .Aggregate()
-                // //   .Group(...)
-                // //   .Sort(...).Limt(...).Project(...).ToListAsync()
+                result = await _commentsCollection
+                    .WithReadConcern(new ReadConcern(ReadConcernLevel.Majority))
+                    .Aggregate(
+                        PipelineDefinition<Comment, ReportProjection>.Create(new [] {
+                            new BsonDocument { { "$sortByCount", "$email" } },
+                            new BsonDocument { { "$limit", 20 } }
+                        })
+                    )
+                    .ToListAsync();
 
                 return new TopCommentsProjection(result);
             }
